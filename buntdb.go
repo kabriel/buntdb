@@ -206,6 +206,9 @@ func (db *DB) Save(wr io.Writer) error {
 	// iterated through every item in the database and write to the buffer
 	db.keys.Ascend(func(item btree.Item) bool {
 		dbi := item.(*dbItem)
+		if dbi.opts != nil && dbi.opts.eph {
+			return true
+		}
 		buf = dbi.writeSetTo(buf)
 		if len(buf) > 1024*1024*4 {
 			// flush when buffer is over 4MB
@@ -677,6 +680,9 @@ func (db *DB) Shrink() error {
 			db.keys.AscendGreaterOrEqual(&dbItem{key: pivot},
 				func(item btree.Item) bool {
 					dbi := item.(*dbItem)
+					if dbi.opts != nil && dbi.opts.eph {
+						return true
+					}
 					// 1000 items or 64MB buffer
 					if n > 1000 || len(buf) > 64*1024*1024 {
 						pivot = dbi.key
@@ -1141,6 +1147,9 @@ func (tx *Tx) Commit() error {
 			if item == nil {
 				tx.db.buf = (&dbItem{key: key}).writeDeleteTo(tx.db.buf)
 			} else {
+				if item.opts != nil && item.opts.eph {
+					continue
+				}
 				tx.db.buf = item.writeSetTo(tx.db.buf)
 			}
 		}
@@ -1189,6 +1198,7 @@ func (tx *Tx) Rollback() error {
 type dbItemOpts struct {
 	ex   bool      // does this item expire?
 	exat time.Time // when does this item expire?
+	eph  bool      // does this item persist?
 }
 type dbItem struct {
 	key, val string      // the binary key and value
@@ -1313,6 +1323,8 @@ type SetOptions struct {
 	// before being evicted. The Expires field must also be set to true.
 	// TTL stands for Time-To-Live.
 	TTL time.Duration
+	// Ephemeral indicates that the Set() key-value will not be persisted
+	Ephemeral bool
 }
 
 // GetLess returns the less function for an index. This is handy for
@@ -1368,10 +1380,15 @@ func (tx *Tx) Set(key, value string, opts *SetOptions) (previousValue string,
 	}
 	item := &dbItem{key: key, val: value}
 	if opts != nil {
+		item.opts = &dbItemOpts{}
 		if opts.Expires {
 			// The caller is requesting that this item expires. Convert the
 			// TTL to an absolute time and bind it to the item.
-			item.opts = &dbItemOpts{ex: true, exat: time.Now().Add(opts.TTL)}
+			item.opts.ex = true
+			item.opts.exat = time.Now().Add(opts.TTL)
+		}
+		if opts.Ephemeral {
+			item.opts.eph = true
 		}
 	}
 	// Insert the item into the keys tree.
