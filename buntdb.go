@@ -1418,7 +1418,9 @@ func (tx *Tx) Set(key, value string, opts *SetOptions) (previousValue string,
 	// For commits we simply assign the item to the map. We use this map to
 	// write the entry to disk.
 	if tx.db.persist {
-		tx.wc.commitItems[key] = item
+		if item.opts == nil || !item.opts.eph {
+			tx.wc.commitItems[key] = item
+		}
 	}
 	return previousValue, replaced, nil
 }
@@ -1467,7 +1469,9 @@ func (tx *Tx) Delete(key string) (val string, err error) {
 		}
 	}
 	if tx.db.persist {
-		tx.wc.commitItems[key] = nil
+		if item.opts == nil || !item.opts.eph {
+			tx.wc.commitItems[key] = nil
+		}
 	}
 	// Even though the item has been deleted, we still want to check
 	// if it has expired. An expired item should not be returned.
