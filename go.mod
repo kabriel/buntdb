@@ -1,4 +1,4 @@
-module github.com/tidwall/buntdb
+module github.com/kabriel/buntdb
 
 go 1.13
 
